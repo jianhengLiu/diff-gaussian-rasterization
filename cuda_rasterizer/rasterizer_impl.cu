@@ -480,6 +480,7 @@ int CudaRasterizer::Rasterizer::forward2(
 		width, height,
 		geomState.means2D,
 		feature_ptr,
+		geomState.depths,
 		geomState.conic_opacity,
 		imgState.accum_alpha,
 		imgState.n_contrib,

@@ -397,6 +397,7 @@ renderCUDA(
 	int W, int H,
 	const float2* __restrict__ points_xy_image,
 	const float* __restrict__ features,
+	const float* __restrict__ depths,
 	const float4* __restrict__ conic_opacity,
 	float* __restrict__ final_T,
 	uint32_t* __restrict__ n_contrib,
@@ -489,7 +490,7 @@ renderCUDA(
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 			
-			// D += z * alpha * T;
+			D += depths[collected_id[j]] * alpha * T;
 
 			T = test_T;
 
@@ -507,7 +508,7 @@ renderCUDA(
 		n_contrib[pix_id] = last_contributor;
 		for (int ch = 0; ch < CHANNELS; ch++)
 			out_color[ch * H * W + pix_id] = C[ch] + T * bg_color[ch];
-		// out_depth[pix_id] = D;
+		out_depth[pix_id] = D;
 	}
 }
 
@@ -544,6 +545,7 @@ void FORWARD::render2(
 	int W, int H,
 	const float2* means2D,
 	const float* colors,
+	const float* depths,
 	const float4* conic_opacity,
 	float* final_T,
 	uint32_t* n_contrib,
@@ -557,6 +559,7 @@ void FORWARD::render2(
 		W, H,
 		means2D,
 		colors,
+		depths,
 		conic_opacity,
 		final_T,
 		n_contrib,
