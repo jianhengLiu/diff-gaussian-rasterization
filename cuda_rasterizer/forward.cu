@@ -79,6 +79,7 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 	// Transposes used to account for row-/column-major conventions.
 	float3 t = transformPoint4x3(mean, viewmatrix);
 
+	// why 1.3?: https://github.com/graphdeco-inria/gaussian-splatting/issues/191
 	const float limx = 1.3f * tan_fovx;
 	const float limy = 1.3f * tan_fovy;
 	const float txtz = t.x / t.z;
@@ -169,6 +170,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	const int W, int H,
 	const float tan_fovx, float tan_fovy,
 	const float focal_x, float focal_y,
+	const float center_x, float center_y,
 	int* radii,
 	float2* points_xy_image,
 	float* depths,
@@ -220,6 +222,7 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	if (det == 0.0f)
 		return;
 	float det_inv = 1.f / det;
+	// cov_inv
 	float3 conic = { cov.z * det_inv, -cov.y * det_inv, cov.x * det_inv };
 
 	// Compute extent in screen space (by finding eigenvalues of
@@ -229,10 +232,20 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	float mid = 0.5f * (cov.x + cov.z);
 	float lambda1 = mid + sqrt(max(0.1f, mid * mid - det));
 	float lambda2 = mid - sqrt(max(0.1f, mid * mid - det));
+	// use a max sphere to determine tiles
 	float my_radius = ceil(3.f * sqrt(max(lambda1, lambda2)));
-	float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
+	// pixel coordinate
+	// float2 point_image = { ndc2Pix(p_proj.x, W), ndc2Pix(p_proj.y, H) };
+
+	// printf("%f, %f\n", center_x, center_y);
+	// float t;
+	// scanf("%f", &t);
+
+	float2 point_image = { ndc2Pix2(p_proj.x, W, center_x), ndc2Pix2(p_proj.y, H,center_y) };
 	uint2 rect_min, rect_max;
+	// get the guassian cover rectangle(defined in rect_min(xy), rect_max(xy))
 	getRect(point_image, my_radius, rect_min, rect_max, grid);
+	// cover no tile
 	if ((rect_max.x - rect_min.x) * (rect_max.y - rect_min.y) == 0)
 		return;
 
@@ -249,9 +262,10 @@ __global__ void preprocessCUDA(int P, int D, int M,
 	// Store some useful helper data for the next steps.
 	depths[idx] = p_view.z;
 	radii[idx] = my_radius;
-	points_xy_image[idx] = point_image;
+	points_xy_image[idx] = point_image; // is it the image to show the initail sfm point image?: it is 'means2D'
 	// Inverse 2D covariance and opacity neatly pack into one float4
 	conic_opacity[idx] = { conic.x, conic.y, conic.z, opacities[idx] };
+	// record how many touched tiles 
 	tiles_touched[idx] = (rect_max.y - rect_min.y) * (rect_max.x - rect_min.x);
 }
 
@@ -277,7 +291,7 @@ renderCUDA(
 	uint32_t horizontal_blocks = (W + BLOCK_X - 1) / BLOCK_X;
 	uint2 pix_min = { block.group_index().x * BLOCK_X, block.group_index().y * BLOCK_Y };
 	uint2 pix_max = { min(pix_min.x + BLOCK_X, W), min(pix_min.y + BLOCK_Y , H) };
-	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y };
+	uint2 pix = { pix_min.x + block.thread_index().x, pix_min.y + block.thread_index().y }; // threads
 	uint32_t pix_id = W * pix.y + pix.x;
 	float2 pixf = { (float)pix.x, (float)pix.y };
 
@@ -297,7 +311,7 @@ renderCUDA(
 	__shared__ float4 collected_conic_opacity[BLOCK_SIZE];
 
 	// Initialize helper variables
-	float T = 1.0f;
+	float T = 1.0f; // Transmittance
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
@@ -340,6 +354,7 @@ renderCUDA(
 			// Obtain alpha by multiplying with Gaussian opacity
 			// and its exponential falloff from mean.
 			// Avoid numerical instabilities (see paper appendix). 
+			// con_o.w = opacity
 			float alpha = min(0.99f, con_o.w * exp(power));
 			if (alpha < 1.0f / 255.0f)
 				continue;
@@ -351,6 +366,7 @@ renderCUDA(
 			}
 
 			// Eq. (3) from 3D Gaussian splatting paper.
+			// SH
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 
@@ -415,6 +431,7 @@ void FORWARD::preprocess(int P, int D, int M,
 	const int W, int H,
 	const float focal_x, float focal_y,
 	const float tan_fovx, float tan_fovy,
+	const float center_x, float center_y,
 	int* radii,
 	float2* means2D,
 	float* depths,
@@ -425,6 +442,10 @@ void FORWARD::preprocess(int P, int D, int M,
 	uint32_t* tiles_touched,
 	bool prefiltered)
 {
+
+	// printf("%f, %f\n", center_x, center_y);
+	// float t;
+	// scanf("%f", &t);
 	preprocessCUDA<NUM_CHANNELS> << <(P + 255) / 256, 256 >> > (
 		P, D, M,
 		means3D,
@@ -442,6 +463,7 @@ void FORWARD::preprocess(int P, int D, int M,
 		W, H,
 		tan_fovx, tan_fovy,
 		focal_x, focal_y,
+		center_x, center_y,
 		radii,
 		means2D,
 		depths,

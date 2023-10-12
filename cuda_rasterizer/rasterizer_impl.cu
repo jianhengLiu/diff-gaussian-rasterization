@@ -214,6 +214,7 @@ int CudaRasterizer::Rasterizer::forward(
 	const float* projmatrix,
 	const float* cam_pos,
 	const float tan_fovx, float tan_fovy,
+	const float center_x, float center_y,
 	const bool prefiltered,
 	float* out_color,
 	int* radii,
@@ -231,8 +232,8 @@ int CudaRasterizer::Rasterizer::forward(
 		radii = geomState.internal_radii;
 	}
 
-	dim3 tile_grid((width + BLOCK_X - 1) / BLOCK_X, (height + BLOCK_Y - 1) / BLOCK_Y, 1);
-	dim3 block(BLOCK_X, BLOCK_Y, 1);
+	dim3 tile_grid((width + BLOCK_X - 1) / BLOCK_X, (height + BLOCK_Y - 1) / BLOCK_Y, 1); // blocks
+	dim3 block(BLOCK_X, BLOCK_Y, 1); // threads
 
 	// Dynamically resize image-based auxiliary buffers during training
 	size_t img_chunk_size = required<ImageState>(width * height);
@@ -244,6 +245,9 @@ int CudaRasterizer::Rasterizer::forward(
 		throw std::runtime_error("For non-RGB, provide precomputed Gaussian colors!");
 	}
 
+	// printf("%f, %f\n", center_x, center_y);
+	// std::cin.get();
+	
 	// Run preprocessing per-Gaussian (transformation, bounding, conversion of SHs to RGB)
 	CHECK_CUDA(FORWARD::preprocess(
 		P, D, M,
@@ -261,6 +265,7 @@ int CudaRasterizer::Rasterizer::forward(
 		width, height,
 		focal_x, focal_y,
 		tan_fovx, tan_fovy,
+		center_x, center_y,
 		radii,
 		geomState.means2D,
 		geomState.depths,
@@ -297,6 +302,7 @@ int CudaRasterizer::Rasterizer::forward(
 		tile_grid)
 	CHECK_CUDA(, debug)
 
+	// The function takes an integer argument and returns the highest bit position of the argument as an integer value. For example, if the argument is 8 (binary 1000), the function returns 3, which is the position of the highest bit.
 	int bit = getHigherMsb(tile_grid.x * tile_grid.y);
 
 	// Sort complete list of (duplicated) Gaussian indices by keys

@@ -43,6 +43,11 @@ __forceinline__ __device__ float ndc2Pix(float v, int S)
 	return ((v + 1.0) * S - 1.0) * 0.5;
 }
 
+__forceinline__ __device__ float ndc2Pix2(float v, int S, float c)
+{
+	return (v * S - 1.0) * 0.5 + c;
+}
+
 __forceinline__ __device__ void getRect(const float2 p, int max_radius, uint2& rect_min, uint2& rect_max, dim3 grid)
 {
 	rect_min = {
@@ -67,6 +72,7 @@ __forceinline__ __device__ float3 transformPoint4x3(const float3& p, const float
 
 __forceinline__ __device__ float4 transformPoint4x4(const float3& p, const float* matrix)
 {
+	// matrix^T * p
 	float4 transformed = {
 		matrix[0] * p.x + matrix[4] * p.y + matrix[8] * p.z + matrix[12],
 		matrix[1] * p.x + matrix[5] * p.y + matrix[9] * p.z + matrix[13],
@@ -151,6 +157,7 @@ __forceinline__ __device__ bool in_frustum(int idx,
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
 	p_view = transformPoint4x3(p_orig, viewmatrix);
 
+	// filter points that too close to the camera
 	if (p_view.z <= 0.2f)// || ((p_proj.x < -1.3 || p_proj.x > 1.3 || p_proj.y < -1.3 || p_proj.y > 1.3)))
 	{
 		if (prefiltered)

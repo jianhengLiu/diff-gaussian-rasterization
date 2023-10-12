@@ -47,6 +47,7 @@ namespace CudaRasterizer
 			const float* projmatrix,
 			const float* cam_pos,
 			const float tan_fovx, float tan_fovy,
+			const float center_x, float center_y,
 			const bool prefiltered,
 			float* out_color,
 			int* radii = nullptr,

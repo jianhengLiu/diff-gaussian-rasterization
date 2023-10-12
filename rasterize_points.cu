@@ -46,6 +46,8 @@ RasterizeGaussiansCUDA(
 	const torch::Tensor& projmatrix,
 	const float tan_fovx, 
 	const float tan_fovy,
+	const float center_x, 
+	const float center_y,
     const int image_height,
     const int image_width,
 	const torch::Tensor& sh,
@@ -66,7 +68,7 @@ RasterizeGaussiansCUDA(
   auto float_opts = means3D.options().dtype(torch::kFloat32);
 
   torch::Tensor out_color = torch::full({NUM_CHANNELS, H, W}, 0.0, float_opts);
-  torch::Tensor radii = torch::full({P}, 0, means3D.options().dtype(torch::kInt32));
+  torch::Tensor radii = torch::full({P}, 0, int_opts);
   
   torch::Device device(torch::kCUDA);
   torch::TensorOptions options(torch::kByte);
@@ -106,6 +108,8 @@ RasterizeGaussiansCUDA(
 		campos.contiguous().data<float>(),
 		tan_fovx,
 		tan_fovy,
+		center_x,
+		center_y,
 		prefiltered,
 		out_color.contiguous().data<float>(),
 		radii.contiguous().data<int>(),
