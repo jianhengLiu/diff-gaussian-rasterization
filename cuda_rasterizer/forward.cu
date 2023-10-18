@@ -491,6 +491,7 @@ renderCUDA(
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
 			
 			D += depths[collected_id[j]] * alpha * T;
+			// A += alpha * T; // accumulate alpha: somehow indicate obserevability
 
 			T = test_T;
 
