@@ -145,10 +145,11 @@ __global__ void computeCov2DCUDA(int P,
 	const float3* means,
 	const int* radii,
 	const float* cov3Ds,
-	const float h_x, float h_y,
+	const float f_x, float f_y,
 	const float tan_fovx, float tan_fovy,
 	const float* view_matrix,
 	const float* dL_dconics,
+	const float* dL_dzdepths,
 	float3* dL_dmeans,
 	float* dL_dcov)
 {
@@ -175,10 +176,24 @@ __global__ void computeCov2DCUDA(int P,
 	const float x_grad_mul = txtz < -limx || txtz > limx ? 0 : 1;
 	const float y_grad_mul = tytz < -limy || tytz > limy ? 0 : 1;
 
-	glm::mat3 J = glm::mat3(h_x / t.z, 0.0f, -(h_x * t.x) / (t.z * t.z),
-		0.0f, h_y / t.z, -(h_y * t.y) / (t.z * t.z),
+	// //matrix
+	// |a11 a12 a13|
+	// |a21 a22 a23|
+	// |a31 a32 a33|
+
+	// //row-major
+	// [a11 a12 a13 a21 a22 a23 a31 a32 a33]
+
+	// //column-major
+	// [a11 a21 a31 a12 a22 a32 a13 a23 a33]
+
+	// glm is column major
+	glm::mat3 J = glm::mat3(f_x / t.z, 0.0f, -(f_x * t.x) / (t.z * t.z),
+		0.0f, f_y / t.z, -(f_y * t.y) / (t.z * t.z),
 		0, 0, 0);
 
+	// viewmat is row major, glm is column major
+	// W = R_C^W
 	glm::mat3 W = glm::mat3(
 		view_matrix[0], view_matrix[4], view_matrix[8],
 		view_matrix[1], view_matrix[5], view_matrix[9],
@@ -207,8 +222,9 @@ __global__ void computeCov2DCUDA(int P,
 		// Gradients of loss w.r.t. entries of 2D covariance matrix,
 		// given gradients of loss w.r.t. conic matrix (inverse covariance matrix).
 		// e.g., dL / da = dL / d_conic_a * d_conic_a / d_a
-		dL_da = denom2inv * (-c * c * dL_dconic.x + 2 * b * c * dL_dconic.y + (denom - a * c) * dL_dconic.z);
-		dL_dc = denom2inv * (-a * a * dL_dconic.z + 2 * a * b * dL_dconic.y + (denom - a * c) * dL_dconic.x);
+		// TODO: check if 2* is not needed, as i calculate, delete it if it will improve?
+		dL_da = denom2inv * (-c * c * dL_dconic.x + 2 * b * c * dL_dconic.y - b * b * dL_dconic.z);
+		dL_dc = denom2inv * (-a * a * dL_dconic.z + 2 * a * b * dL_dconic.y - b * b * dL_dconic.x);
 		dL_db = denom2inv * 2 * (b * c * dL_dconic.x - (denom + 2 * b * b) * dL_dconic.y + a * b * dL_dconic.z);
 
 		// Gradients of loss L w.r.t. each 3D covariance matrix (Vrk) entry, 
@@ -259,13 +275,20 @@ __global__ void computeCov2DCUDA(int P,
 	float tz3 = tz2 * tz;
 
 	// Gradients of loss w.r.t. transformed Gaussian mean t
-	float dL_dtx = x_grad_mul * -h_x * tz2 * dL_dJ02;
-	float dL_dty = y_grad_mul * -h_y * tz2 * dL_dJ12;
-	float dL_dtz = -h_x * tz2 * dL_dJ00 - h_y * tz2 * dL_dJ11 + (2 * h_x * t.x) * tz3 * dL_dJ02 + (2 * h_y * t.y) * tz3 * dL_dJ12;
+	float dL_dtx = x_grad_mul * -f_x * tz2 * dL_dJ02;
+	float dL_dty = y_grad_mul * -f_y * tz2 * dL_dJ12;
+	float dL_dtz = -f_x * tz2 * dL_dJ00 - f_y * tz2 * dL_dJ11 + (2 * f_x * t.x) * tz3 * dL_dJ02 + (2 * f_y * t.y) * tz3 * dL_dJ12;
 
 	// Account for transformation of mean to t
 	// t = transformPoint4x3(mean, view_matrix);
+	// dL_dmean = dL_dt * dt_dmean
 	float3 dL_dmean = transformVec4x3Transpose({ dL_dtx, dL_dty, dL_dtz }, view_matrix);
+
+	float dL_dzdepth = dL_dzdepths[idx];
+	dL_dmean.x += dL_dzdepth * view_matrix[2];
+	dL_dmean.y += dL_dzdepth * view_matrix[6];
+	dL_dmean.z += dL_dzdepth * view_matrix[10];
+	
 
 	// Gradients of loss w.r.t. Gaussian means, but only the portion 
 	// that is caused because the mean affects the covariance matrix.
@@ -415,7 +438,7 @@ renderCUDA(
 	float4* __restrict__ dL_dconic2D,
 	float* __restrict__ dL_dopacity,
 	float* __restrict__ dL_dcolors,
-	float* __restrict__ dL_dzdepth)
+	float* __restrict__ dL_dzdepths)
 {
 	// We rasterize again. Compute necessary block info.
 	auto block = cg::this_thread_block();
@@ -454,10 +477,11 @@ renderCUDA(
 	float dL_dpixel[C];
 	float dL_ddepth;
 	float accum_depth_rec = 0;
-	if (inside)
+	if (inside){
 		for (int i = 0; i < C; i++)
 			dL_dpixel[i] = dL_dpixels[i * H * W + pix_id];
 		dL_ddepth = dL_ddepths[pix_id];
+	}
 
 	float last_alpha = 0;
 	float last_color[C] = { 0 };
@@ -532,7 +556,7 @@ renderCUDA(
 				// many that were affected by this Gaussian.
 				atomicAdd(&(dL_dcolors[global_id * C + ch]), dchannel_dcolor * dL_dchannel);
 			}
-			atomicAdd(&(dL_dzdepth[global_id]), dL_ddepth * ddepth_dzdepth);
+			atomicAdd(&(dL_dzdepths[global_id]), dL_ddepth * ddepth_dzdepth);
 			const float z = collected_depths[j];
 			accum_depth_rec = last_alpha * last_depth + (1.f - last_alpha) * accum_depth_rec;
 			last_depth = z;
@@ -591,6 +615,7 @@ void BACKWARD::preprocess(
 	const glm::vec3* campos,
 	const float3* dL_dmean2D,
 	const float* dL_dconic,
+	const float* dL_dzdepths,
 	glm::vec3* dL_dmean3D,
 	float* dL_dcolor,
 	float* dL_dcov3D,
@@ -613,6 +638,7 @@ void BACKWARD::preprocess(
 		tan_fovy,
 		viewmatrix,
 		dL_dconic,
+		dL_dzdepths,
 		(float3*)dL_dmean3D,
 		dL_dcov3D);
 
@@ -657,7 +683,7 @@ void BACKWARD::render(
 	float4* dL_dconic2D,
 	float* dL_dopacity,
 	float* dL_dcolors,
-	float* dL_dzdepth)
+	float* dL_dzdepths)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> >(
 		ranges,
@@ -676,6 +702,6 @@ void BACKWARD::render(
 		dL_dconic2D,
 		dL_dopacity,
 		dL_dcolors,
-		dL_dzdepth
+		dL_dzdepths
 		);
 }

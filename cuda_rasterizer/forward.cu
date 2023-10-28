@@ -99,17 +99,35 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 
 	glm::mat3 T = W * J;
 
-	glm::mat3 Vrk = glm::mat3(
-		cov3D[0], cov3D[1], cov3D[2],
-		cov3D[1], cov3D[3], cov3D[4],
-		cov3D[2], cov3D[4], cov3D[5]);
+	// glm::mat3 Vrk = glm::mat3(
+	// 	cov3D[0], cov3D[1], cov3D[2],
+	// 	cov3D[1], cov3D[3], cov3D[4],
+	// 	cov3D[2], cov3D[4], cov3D[5]);
+
+	
+	// glm::mat3 Vrk = glm::mat3(
+	// 	1.0, 2.0, 3.0,
+	// 	2.0, 4.0, 5.0,
+	// 	3.0, 5.0, 6.0);
 
 	glm::mat3 cov = glm::transpose(T) * glm::transpose(Vrk) * T;
+	printf("Vrk:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\ncov:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
+	Vrk[0][0],Vrk[0][1],Vrk[0][2],
+	Vrk[1][0],Vrk[1][1],Vrk[1][2],
+	Vrk[2][0],Vrk[2][1],Vrk[2][2],
+	cov[0][0],cov[0][1],cov[0][2],
+	cov[1][0],cov[1][1],cov[1][2],
+	cov[2][0],cov[2][1],cov[2][2]);
+	// printf("cov:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
+	// cov[0][0],cov[0][1],cov[0][2],
+	// cov[1][0],cov[1][1],cov[1][2],
+	// cov[2][0],cov[2][1],cov[2][2]);
 
 	// Apply low-pass filter: every Gaussian should be at least
 	// one pixel wide/high. Discard 3rd row and column.
 	cov[0][0] += 0.3f;
 	cov[1][1] += 0.3f;
+	// TODO: reprojected cov not symmetric 
 	return { float(cov[0][0]), float(cov[0][1]), float(cov[1][1]) };
 }
 
@@ -140,8 +158,19 @@ __device__ void computeCov3D(const glm::vec3 scale, float mod, const glm::vec4 r
 
 	glm::mat3 M = S * R;
 
+	// printf("R:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
+	// R[0][0],R[0][1],R[0][2],
+	// R[1][0],R[1][1],R[1][2],
+	// R[2][0],R[2][1],R[2][2]);
 	// Compute 3D world covariance matrix Sigma
 	glm::mat3 Sigma = glm::transpose(M) * M;
+	// printf("R:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\nSigma:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
+	// R[0][0],R[0][1],R[0][2],
+	// R[1][0],R[1][1],R[1][2],
+	// R[2][0],R[2][1],R[2][2],
+	// Sigma[0][0],Sigma[0][1],Sigma[0][2],
+	// Sigma[1][0],Sigma[1][1],Sigma[1][2],
+	// Sigma[2][0],Sigma[2][1],Sigma[2][2]);
 
 	// Covariance is symmetric, only store upper right
 	cov3D[0] = Sigma[0][0];
@@ -197,9 +226,13 @@ __global__ void preprocessCUDA(int P, int D, int M,
 
 	// Transform point by projecting
 	float3 p_orig = { orig_points[3 * idx], orig_points[3 * idx + 1], orig_points[3 * idx + 2] };
+
 	float4 p_hom = transformPoint4x4(p_orig, projmatrix);
 	float p_w = 1.0f / (p_hom.w + 0.0000001f);
+	// [x, y, 1]
 	float3 p_proj = { p_hom.x * p_w, p_hom.y * p_w, p_hom.z * p_w };
+	// printf("p_hom: %f, %f, %f, %f\n", p_hom.x, p_hom.y, p_hom.z, p_hom.w);
+	// printf("p_proj: %f, %f, %f\n", p_proj.x, p_proj.y, p_proj.z);
 
 	// If 3D covariance matrix is precomputed, use it, otherwise compute
 	// from scaling and rotation parameters. 

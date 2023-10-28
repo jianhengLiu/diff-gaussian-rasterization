@@ -518,7 +518,7 @@ void CudaRasterizer::Rasterizer::backward(
 	float* dL_dconic,
 	float* dL_dopacity,
 	float* dL_dcolor,
-	float* dL_dzdepth,
+	float* dL_dzdepths,
 	float* dL_dmean3D,
 	float* dL_dcov3D,
 	float* dL_dsh,
@@ -565,7 +565,7 @@ void CudaRasterizer::Rasterizer::backward(
 		(float4*)dL_dconic,
 		dL_dopacity,
 		dL_dcolor,
-		dL_dzdepth), debug)
+		dL_dzdepths), debug)
 
 	// Take care of the rest of preprocessing. Was the precomputed covariance
 	// given to us or a scales/rot pair? If precomputed, pass that. If not,
@@ -587,6 +587,7 @@ void CudaRasterizer::Rasterizer::backward(
 		(glm::vec3*)campos,
 		(float3*)dL_dmean2D,
 		dL_dconic,
+		dL_dzdepths,
 		(glm::vec3*)dL_dmean3D,
 		dL_dcolor,
 		dL_dcov3D,
