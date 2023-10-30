@@ -99,10 +99,10 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 
 	glm::mat3 T = W * J;
 
-	// glm::mat3 Vrk = glm::mat3(
-	// 	cov3D[0], cov3D[1], cov3D[2],
-	// 	cov3D[1], cov3D[3], cov3D[4],
-	// 	cov3D[2], cov3D[4], cov3D[5]);
+	glm::mat3 Vrk = glm::mat3(
+		cov3D[0], cov3D[1], cov3D[2],
+		cov3D[1], cov3D[3], cov3D[4],
+		cov3D[2], cov3D[4], cov3D[5]);
 
 	
 	// glm::mat3 Vrk = glm::mat3(
@@ -111,13 +111,13 @@ __device__ float3 computeCov2D(const float3& mean, float focal_x, float focal_y,
 	// 	3.0, 5.0, 6.0);
 
 	glm::mat3 cov = glm::transpose(T) * glm::transpose(Vrk) * T;
-	printf("Vrk:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\ncov:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
-	Vrk[0][0],Vrk[0][1],Vrk[0][2],
-	Vrk[1][0],Vrk[1][1],Vrk[1][2],
-	Vrk[2][0],Vrk[2][1],Vrk[2][2],
-	cov[0][0],cov[0][1],cov[0][2],
-	cov[1][0],cov[1][1],cov[1][2],
-	cov[2][0],cov[2][1],cov[2][2]);
+	// printf("Vrk:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\ncov:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
+	// Vrk[0][0],Vrk[0][1],Vrk[0][2],
+	// Vrk[1][0],Vrk[1][1],Vrk[1][2],
+	// Vrk[2][0],Vrk[2][1],Vrk[2][2],
+	// cov[0][0],cov[0][1],cov[0][2],
+	// cov[1][0],cov[1][1],cov[1][2],
+	// cov[2][0],cov[2][1],cov[2][2]);
 	// printf("cov:\n%f, %f, %f\n %f, %f, %f\n %f, %f, %f\n",
 	// cov[0][0],cov[0][1],cov[0][2],
 	// cov[1][0],cov[1][1],cov[1][2],
@@ -547,32 +547,6 @@ renderCUDA(
 }
 
 void FORWARD::render(
-	const dim3 grid, dim3 block,
-	const uint2* ranges,
-	const uint32_t* point_list,
-	int W, int H,
-	const float2* means2D,
-	const float* colors,
-	const float4* conic_opacity,
-	float* final_T,
-	uint32_t* n_contrib,
-	const float* bg_color,
-	float* out_color)
-{
-	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
-		ranges,
-		point_list,
-		W, H,
-		means2D,
-		colors,
-		conic_opacity,
-		final_T,
-		n_contrib,
-		bg_color,
-		out_color);
-}
-
-void FORWARD::render2(
 	const dim3 grid, dim3 block,
 	const uint2* ranges,
 	const uint32_t* point_list,
